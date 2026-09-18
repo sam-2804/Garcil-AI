@@ -1,0 +1,557 @@
+====================================================================
+                              GARCIL-AI
+                  Adaptive Learning Path Architect
+====================================================================
+        Project Documentation -- Hackathon Problem Statement G15
+                          "Delulu to Deploy"
+
+
+--------------------------------------------------------------------
+PROJECT OVERVIEW
+--------------------------------------------------------------------
+Project Name     : Garcil-AI
+Team Name        : Blue Raven
+Team Members     : Sam David   (Backend, AI Pipeline & Deployment)
+                    Guru Prasadh (Data Curation, Testing & Demo Lead)
+Problem Statement: G15 -- AI Personal Learning Path Generator
+Domain           : Generative AI / EdTech
+Institution      : Fatima Michael College of Engineering and Technology
+Core Stack       : Python, Streamlit, Google Gemini 3.6 Flash, SQLite, Mermaid.js
+Build Window     : 24 hours (hackathon sprint)
+
+
+--------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------
+ 1.  Executive Summary
+ 2.  Problem Statement
+ 3.  Proposed Solution
+ 4.  Technology Stack & Rationale
+ 5.  System Architecture
+ 6.  Design & User Experience
+ 7.  Technical Contribution & Differentiators
+ 8.  Database Schema
+ 9.  AI Pipeline: RAG & Agentic Reasoning
+ 10. Risk Management & Fallback Strategy
+ 11. 24-Hour Execution Timeline
+ 12. Local Setup & Quickstart Guide
+ 13. Evaluation Rubric Alignment
+ 14. Future Roadmap
+ 15. Conclusion
+
+
+====================================================================
+1. EXECUTIVE SUMMARY
+====================================================================
+Garcil-AI is a stateful, agentic career-execution engine built for
+Hackathon Problem Statement G15: AI Personal Learning Path Generator.
+Rather than producing another conversational chatbot, Garcil-AI
+accepts a student's academic background, current technical skills,
+target job role, and weekly time commitment, and returns an
+interactive, visually rendered execution roadmap.
+
+The system combines deterministic Python logic, a local
+retrieval-augmented generation (RAG) layer, a multi-stage generative
+AI pipeline, and persistent state tracking via SQLite. The result is
+a tool that gives every student a personalized, evidence-backed, and
+continuously adapting learning path -- rather than a generic,
+one-size-fits-all list.
+
+
+====================================================================
+2. PROBLEM STATEMENT
+====================================================================
+Existing career-learning platforms and raw AI chat interfaces share
+three recurring weaknesses:
+
+  * Generic, one-size-fits-all advice
+    -> Every student starts from a different baseline -- some
+       already know Python, some have shipped projects, others are
+       complete beginners -- yet most platforms issue the same
+       static roadmap regardless of where the learner stands.
+
+  * Resource clutter and link hallucination
+    -> Chat-based tools tend to produce long, unstructured walls of
+       text, often citing course or video links that are broken or
+       entirely fabricated.
+
+  * Statelessness
+    -> A conversational session forgets everything once it ends.
+       There is no persistent record of what a student has learned,
+       so there is no way for a roadmap to adapt as the student
+       progresses.
+
+Garcil-AI directly targets the "missing link" between a student's
+current skill set and their target job role: detecting the exact
+gap, then building a prioritized, resourced, and trackable sequence
+to close it.
+
+
+====================================================================
+3. PROPOSED SOLUTION
+====================================================================
+Garcil-AI's workflow follows six steps, moving a learner from raw
+profile data to an actionable, adaptive roadmap:
+
+  1. The student enters academic background, current skills, target
+     role, and weekly time availability.
+  2. The system loads the skill requirements associated with the
+     selected target role.
+  3. It compares the student's current skills against the required
+     skills to compute an exact gap.
+  4. The AI pipeline sequences and prioritizes the missing skills
+     based on dependency order and learning effort.
+  5. Verified learning resources (courses, videos, repositories) are
+     retrieved and attached to each gap.
+  6. Progress is saved; as the student checks off completed items,
+     the roadmap recalculates and adapts -- it is never a fixed,
+     one-time output.
+
+
+====================================================================
+4. TECHNOLOGY STACK & RATIONALE
+====================================================================
+Every layer of Garcil-AI was chosen for a specific reason --
+favoring lightweight, dependable tools that a two-person team could
+implement and deploy reliably inside a 24-hour window.
+
+--------------------------------------------------------------------
+Layer            | Technology
+--------------------------------------------------------------------
+Backend / Logic  | Python 3.10+
+Frontend         | Streamlit
+Database         | SQLite 3
+Primary AI Engine| Google Gemini 3.6 Flash
+Backup AI Engine | Hugging Face Serverless Inference (open-source)
+Visualization    | Mermaid.js
+Deployment       | Streamlit Community Cloud
+--------------------------------------------------------------------
+
+Why each was chosen:
+
+  - Python 3.10+
+    Fast to write under time pressure, has first-class support for
+    set operations (used in the gap engine), and integrates
+    natively with both the Gemini SDK and SQLite.
+
+  - Streamlit
+    Turns a Python script into a shareable web app with almost no
+    front-end code -- critical for a 24-hour build -- while still
+    supporting custom widgets, forms, and embedded HTML/JS (for
+    Mermaid.js).
+
+  - SQLite 3
+    Zero-configuration, file-based, and requires no external server
+    or credentials -- ideal for a prototype that must persist user
+    state without adding deployment complexity.
+
+  - Google Gemini 3.6 Flash (Primary AI)
+    Low-latency, cost-efficient, and supports strict JSON-schema-
+    constrained output, which lets the roadmap and scheduling data
+    be parsed directly into the app without brittle text parsing.
+
+  - Hugging Face Serverless Inference (Backup AI)
+    Removes single-vendor dependency; if the primary API is
+    rate-limited or unavailable during the live demo, the app can
+    fail over without a full outage.
+
+  - Mermaid.js
+    A lightweight, text-to-diagram library that renders the learning
+    roadmap as a visual flowchart directly inside Streamlit, with no
+    heavy charting dependencies.
+
+  - Streamlit Community Cloud
+    Free, Git-integrated continuous deployment with encrypted
+    secrets management -- lets the team ship a live, shareable demo
+    link without managing servers.
+
+NOTE: This stack intentionally avoids heavier frameworks (Django,
+React, PostgreSQL, Docker orchestration) that would add setup and
+deployment risk without adding value for a 24-hour, single-prototype
+deliverable.
+
+
+====================================================================
+5. SYSTEM ARCHITECTURE
+====================================================================
+Garcil-AI is built as a four-stage hybrid pipeline that deliberately
+separates deterministic computation from generative AI -- using each
+where it is strongest.
+
+  [ User Profile Input ]
+            |
+            v
+  +---------------------------------------------------------+
+  | STAGE 1: Deterministic Skill-Gap Engine (Feature Eng.)  |
+  |   - Pure Python set-difference: required - known         |
+  |   - Computes Career Readiness Score (%) -- no AI used    |
+  +---------------------------------------------------------+
+            |
+            v
+  +---------------------------------------------------------+
+  | STAGE 2: Local Knowledge Retrieval Engine (RAG)         |
+  |   - Queries resources.json for verified course links     |
+  |   - Injects ground-truth materials into prompt context   |
+  +---------------------------------------------------------+
+            |
+            v
+  +---------------------------------------------------------+
+  | STAGE 3: Multi-Agent Generative Pipeline (Gemini 3.6)   |
+  |   - Agent 1: Curriculum Sequencer                        |
+  |   - Agent 2: Schedule Optimizer                          |
+  +---------------------------------------------------------+
+            |
+            v
+  +---------------------------------------------------------+
+  | STAGE 4: Stateful UI & Persistence Layer                |
+  |   - SQLite stores state & progress checkboxes            |
+  |   - Streamlit + Mermaid.js render the visual roadmap     |
+  +---------------------------------------------------------+
+
+Stage details:
+
+  Stage 1 -- Deterministic Skill-Gap Engine
+    - Takes the student's selected skills and target role from the
+      Streamlit form.
+    - Performs a pure Python set-difference operation:
+      required_skills - known_skills.
+    - Computes a mathematical Career Readiness Score (%) with 100%
+      accuracy -- no AI involved at this stage.
+
+  Stage 2 -- Local Knowledge Retrieval (RAG)
+    - Queries a curated local dataset, resources.json, tagged by
+      skill, difficulty tier, and material type.
+    - Retrieves verified Coursera, YouTube, and GitHub links that
+      match only the missing skills.
+    - Grounds the AI prompt in real, checked URLs -- eliminating
+      link hallucination entirely.
+
+  Stage 3 -- Generative Agentic Pipeline (Gemini 3.6 Flash)
+    - Curriculum Sequencer: orders the missing skills logically
+      (e.g., SQL before advanced Pandas merges).
+    - Schedule Optimizer: fits the sequenced curriculum into the
+      student's stated weekly time budget, trimming or extending
+      scope as needed.
+    - Output is constrained to strict JSON via schema enforcement,
+      so the app can parse it directly without free-text parsing.
+
+  Stage 4 -- Stateful UI & Persistence Layer
+    - SQLite stores each user's target role, readiness score,
+      missing skills, and checklist progress.
+    - Streamlit renders the roadmap as an interactive dashboard;
+      Mermaid.js draws the plan as a visual flowchart.
+    - As milestones are checked off, stored state updates and the
+      roadmap recalculates -- making the system adaptive rather
+      than static.
+
+Data flow summary:
+  User Profile Input -> Deterministic Gap Engine -> Local RAG
+  Retrieval -> Multi-Agent Generative Pipeline -> SQLite
+  Persistence -> Streamlit + Mermaid.js Visualization
+
+
+====================================================================
+6. DESIGN & USER EXPERIENCE
+====================================================================
+The interface is intentionally minimal so a judge or first-time user
+can understand the tool within seconds:
+
+  * Single-page dashboard
+    Profile form (background, target role, current skills, weekly
+    hours) sits above the results panel -- no multi-page navigation
+    to get lost in.
+
+  * Immediate feedback
+    Submitting the form instantly surfaces the Career Readiness
+    Score and the list of missing competencies before any AI call
+    is made, so the app feels responsive even while the generative
+    stage runs.
+
+  * Visual roadmap
+    The AI-generated curriculum is rendered as a Mermaid.js
+    flowchart rather than a wall of text, making dependency order
+    and pacing easy to scan.
+
+  * Progress affordances
+    Checkboxes next to each roadmap item write directly to SQLite,
+    and the readiness/progress metrics update live -- reinforcing
+    that this is a living plan, not a one-off report.
+
+  * Wide layout
+    Streamlit's wide mode is used so the input form and the
+    generated roadmap can sit side-by-side on a projector during the
+    live demo.
+
+
+====================================================================
+7. TECHNICAL CONTRIBUTION & DIFFERENTIATORS
+====================================================================
+A common failure mode in AI hackathons is submitting a thin wrapper
+around a single API call. Garcil-AI's technical contribution is
+deliberately built to avoid that:
+
+  - Deterministic feature engineering
+    The skill-gap matrix and Career Readiness Score are computed
+    with plain Python set math -- no AI is used where deterministic
+    logic is more accurate and instantaneous.
+
+  - Local RAG retrieval
+    resources.json acts as a verified ground-truth knowledge base,
+    so every link shown to the student has been curated in advance
+    rather than generated on the fly.
+
+  - Multi-stage agentic chaining
+    Generative AI is reserved for the two tasks it is genuinely
+    suited to -- sequencing curriculum by dependency, and optimizing
+    that sequence against a time constraint -- rather than being
+    asked to do arithmetic or lookups.
+
+  - Stateful persistence
+    A local SQLite database gives the roadmap memory across
+    sessions, enabling real adaptation as milestones are completed.
+
+  - Vendor-agnostic fallback
+    An alternate open-source pipeline (via Hugging Face) can
+    substitute for Gemini, so the demo is not dependent on a single
+    provider's uptime.
+
+  >> "Our solution is not just a generic API wrapper -- we
+     contribute through deterministic skill-gap math, local RAG
+     retrieval, multi-stage agentic chaining, and stateful database
+     persistence."
+
+
+====================================================================
+8. DATABASE SCHEMA
+====================================================================
+Garcil-AI uses a single local SQLite file, garcil_state.db, kept
+intentionally simple for a 24-hour build:
+
+--------------------------------------------------------------------
+Column           | Type                    | Purpose
+--------------------------------------------------------------------
+id               | INTEGER (PK, autoinc)   | Unique session ID
+target_role      | TEXT                    | Selected job role
+readiness_score  | REAL                    | Career Readiness Score %
+missing_skills   | TEXT (JSON-encoded)     | Identified skill gap
+--------------------------------------------------------------------
+
+Planned extension: a checklist_progress table to track individual
+roadmap item completion and timestamps, enabling richer analytics on
+learning velocity (see Future Roadmap, Phase 1).
+
+
+====================================================================
+9. AI PIPELINE: RAG & AGENTIC REASONING
+====================================================================
+Retrieval-Augmented Generation (RAG)
+--------------------------------------------------------------------
+Instead of asking the language model to recall or invent course
+links -- which risks broken or fabricated URLs -- the app first
+searches resources.json, a locally curated dataset tagged by skill,
+difficulty, and material type (video, course, or repository). Only
+verified, matching links are passed into the prompt context, so the
+model's role is limited to arranging and describing real resources,
+not sourcing them.
+
+Agentic Reasoning (Multi-Stage Chaining)
+--------------------------------------------------------------------
+Rather than a single large prompt, the generative stage is split
+into two focused agents:
+
+  1. Curriculum Sequencer
+     Accepts the missing-skills list and RAG resources, and orders
+     them into a logical learning sequence based on real-world
+     prerequisite relationships.
+
+  2. Schedule Optimizer
+     Accepts the sequenced curriculum plus the student's weekly time
+     budget, and compresses or extends the plan to fit -- for
+     example, stretching a 4-week plan to 12 weeks for a student
+     with only 3 hours a week.
+
+Structured Output Enforcement
+--------------------------------------------------------------------
+Both agents are configured with strict JSON-schema-constrained
+output (response_mime_type="application/json"), so responses can be
+parsed directly into Python data structures without regex or
+free-text extraction -- reducing the chance of a rendering failure
+during the live demo.
+
+
+====================================================================
+10. RISK MANAGEMENT & FALLBACK STRATEGY
+====================================================================
+--------------------------------------------------------------------
+Risk                                  | Mitigation
+--------------------------------------------------------------------
+Primary AI provider (Gemini)          | Fallback pipeline via
+rate-limited/unavailable during demo  | Hugging Face Serverless
+                                       | Inference using open-source
+                                       | models.
+--------------------------------------------------------------------
+Generative model produces malformed   | Strict JSON-schema
+output                                | enforcement + server-side
+                                       | validation before rendering.
+--------------------------------------------------------------------
+Course/resource links broken or       | RAG retrieval restricted to
+hallucinated                          | a pre-verified local dataset
+                                       | (resources.json).
+--------------------------------------------------------------------
+Live network issues during on-site    | Local Streamlit fallback run
+presentation                          | + pre-recorded demo clip as
+                                       | backup.
+--------------------------------------------------------------------
+Time overrun within the 24-hour       | Deterministic components
+window                                | (gap engine, database) built
+                                       | and tested first, before any
+                                       | AI integration.
+--------------------------------------------------------------------
+
+
+====================================================================
+11. 24-HOUR EXECUTION TIMELINE
+====================================================================
+--------------------------------------------------------------------
+Time      | Sam David (Technical Lead) | Guru Prasadh (Product Lead)
+--------------------------------------------------------------------
+0-2 hrs   | Init Git repo, set up      | Research target-role skill
+          | Streamlit Cloud shell.     | taxonomies; begin
+          |                            | resources.json curation.
+--------------------------------------------------------------------
+2-6 hrs   | Implement deterministic    | Populate resources.json
+          | set-math skill-gap engine  | with verified links; build
+          | and SQLite connection.     | slide deck.
+--------------------------------------------------------------------
+6-12 hrs  | Integrate Gemini API with  | Prompt-engineer and
+          | strict JSON output and     | validate agent outputs;
+          | local RAG layer.           | create test user personas.
+--------------------------------------------------------------------
+12-18 hrs | Implement Mermaid.js       | Test edge-case inputs on
+          | rendering and progress     | mobile; refine pitch
+          | checkboxes.                | script.
+--------------------------------------------------------------------
+18-22 hrs | Run end-to-end testing;    | Finalize presentation deck;
+          | verify state persistence   | rehearse the live pitch.
+          | and secrets security.      |
+--------------------------------------------------------------------
+22-24 hrs | Code freeze, UI polish,    | Finalize Q&A responses;
+          | final deployment check.    | prepare demo environment.
+--------------------------------------------------------------------
+
+
+====================================================================
+12. LOCAL SETUP & QUICKSTART GUIDE
+====================================================================
+Prerequisites
+--------------------------------------------------------------------
+  - Python 3.10 or higher
+  - A valid Google Gemini API key
+  - (Optional) A Hugging Face access token, for the open-source
+    fallback pipeline
+
+Installation Steps
+--------------------------------------------------------------------
+  1. Clone the repository:
+     git clone https://github.com/your-username/garcil-ai.git
+     cd garcil-ai
+
+  2. Install dependencies:
+     pip install -r requirements.txt
+
+  3. Create a .env file in the project root:
+     GEMINI_API_KEY=your_key_here
+     HF_TOKEN=your_token_here
+
+  4. Launch the application:
+     streamlit run app.py
+
+Core Dependencies
+--------------------------------------------------------------------
+  streamlit          -> Web UI and dashboard rendering
+  google-genai        -> Gemini 3.6 Flash API client
+  huggingface-hub      -> Backup open-source model inference
+  python-dotenv         -> Loads API keys from .env securely
+  pandas                 -> Lightweight data handling for
+                            skill/resource tables
+
+
+====================================================================
+13. EVALUATION RUBRIC ALIGNMENT
+====================================================================
+  - Skill extraction & gap accuracy
+    Achieved with 100% precision via deterministic Python taxonomy
+    matching, rather than probabilistic extraction.
+
+  - Recommendation relevance
+    Ensured through local RAG retrieval, which injects only
+    pre-verified educational resources into the AI's context.
+
+  - Non-wrapper technical depth
+    Demonstrated through custom feature engineering, retrieval,
+    multi-agent chaining, and persistent state -- not a single
+    pass-through API call.
+
+  - Progress adaptation
+    Solved via SQLite-backed state, which recalculates readiness and
+    pacing as the student completes milestones.
+
+
+====================================================================
+14. FUTURE ROADMAP
+====================================================================
+Beyond the 24-hour prototype, the following phases would extend
+Garcil-AI into a production-ready product:
+
+  PHASE 1 -- Post-Hackathon Hardening
+  ------------------------------------
+    - Migrate from SQLite to a managed database (e.g., PostgreSQL)
+      to support concurrent multi-user access.
+    - Add a checklist_progress table with timestamps to track
+      learning velocity over time.
+    - Introduce user authentication so roadmaps persist per account
+      rather than per local session.
+
+  PHASE 2 -- Data & Intelligence Expansion
+  ------------------------------------------
+    - Expand the role taxonomy and resources.json dataset to cover
+      significantly more job roles and skills.
+    - Replace the static local dataset with a periodically refreshed
+      resource index to keep links current.
+    - Add a feedback loop where students rate resources, improving
+      future retrieval ranking.
+
+  PHASE 3 -- Product Depth
+  --------------------------
+    - Support project-based validation (e.g., GitHub submission
+      review) so skills are confirmed, not just self-reported.
+    - Add team/cohort views for bootcamps or colleges to track group
+      progress.
+    - Introduce notifications/reminders to keep students on pace
+      with their weekly time budget.
+
+  PHASE 4 -- Platform & Scale
+  ------------------------------
+    - Move from Streamlit to a dedicated frontend (e.g., React) for
+      a richer, more customizable UI at scale.
+    - Containerize the deployment (Docker) and move to a scalable
+      cloud host as usage grows.
+    - Explore fine-tuning a smaller open-source model on curated
+      curriculum-sequencing data to reduce reliance on external
+      APIs.
+
+
+====================================================================
+15. CONCLUSION
+====================================================================
+Garcil-AI demonstrates that a focused, hybrid architecture --
+deterministic logic where precision matters, and generative AI only
+where it adds genuine value -- can deliver a personalized, adaptive
+learning tool within a 24-hour build window. The result is a
+prototype that is fast, explainable, resistant to hallucination, and
+built with a clear path to a production-grade product.
+
+
+====================================================================
+              Team Blue Raven -- Garcil-AI -- Problem G15
+====================================================================
