@@ -137,21 +137,36 @@ if st.session_state.retro_mode:
 
 conn = sqlite3.connect("garcil_state.db", check_same_thread=False)
 cursor = conn.cursor()
+
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_email TEXT,
         target_role TEXT,
         readiness_score REAL,
-        missing_skills TEXT
+        missing_skills TEXT,
+        curriculum TEXT
     )
 """)
 
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS quest_progress (
-        week_num INTEGER PRIMARY KEY,
-        is_completed INTEGER DEFAULT 0 
+        player_email TEXT,
+        week_num INTEGER,
+        is_completed INTEGER DEFAULT 0,
+        PRIMARY KEY (player_email, week_num)
     )
 """)
+
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_accounts (
+        email TEXT PRIMARY KEY,
+        name TEXT,
+        password TEXT
+    )
+""")
+
+
 conn.commit()
 
 # Deterministic Data
@@ -165,6 +180,8 @@ ROLE_TAXONOMY = {
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+    st.session_state.player_name = None
+    st.session_state.player_email = None
 
 if not st.session_state.logged_in:
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -173,18 +190,49 @@ if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         with st.container(border=True):
-            st.markdown("### ENTER PLAYER CREDENTIALS")
-            email_input = st.text_input("Player ID (Email)", placeholder="john@gmail.com")
-            password_input = st.text_input("Password", type="password", placeholder="........")
+            # Create a clean tabbed interface for Login vs Registration
+            tab1, tab2 = st.tabs(["LOGIN", "NEW PLAYER REGISTRATION"])
             
-            if st.button("AUTHORIZE LOGIN", type="primary", use_container_width=True):
-                if email_input == "samdavid9333@gmail.com" and password_input == "garcil123":
-                    st.session_state.logged_in = True
-                    st.rerun()
-                else:
-                    st.error("ACCESS DENIED: Invalid Credentials")
+            with tab1:
+                st.markdown("### ENTER CREDENTIALS")
+                login_email = st.text_input("Player ID (Email)", key="login_email")
+                login_pass = st.text_input("Password", type="password", key="login_pass")
+                
+                if st.button("AUTHORIZE LOGIN", type="primary", use_container_width=True):
+                    # Check database for exact match
+                    cursor.execute("SELECT name, password FROM user_accounts WHERE email = ?", (login_email,))
+                    record = cursor.fetchone()
+                    
+                    if record and record[1] == login_pass:
+                        st.session_state.logged_in = True
+                        st.session_state.player_name = record[0]
+                        st.session_state.player_email = login_email
+                        st.rerun()
+                    else:
+                        st.error("ACCESS DENIED: Invalid Player ID or Password")
+                        
+            with tab2:
+                st.markdown("### CREATE NEW PROFILE")
+                reg_name = st.text_input("Player Name", key="reg_name")
+                reg_email = st.text_input("Player ID (Email)", key="reg_email")
+                reg_pass = st.text_input("Password", type="password", key="reg_pass")
+                
+                if st.button("REGISTER PROFILE", type="primary", use_container_width=True):
+                    if reg_name and reg_email and reg_pass:
+                        try:    
+                            # Insert new user into database
+                            cursor.execute(
+                                "INSERT INTO user_accounts (email, name, password) VALUES (?, ?, ?)", 
+                                (reg_email, reg_name, reg_pass)
+                            )
+                            conn.commit()
+                            st.success("PROFILE CREATED! Switch to the LOGIN tab to enter.")
+                        except sqlite3.IntegrityError:
+                            # Triggers if the email (PRIMARY KEY) already exists
+                            st.error("ERROR: Player ID (Email) already exists in the system.")
+                    else:
+                        st.warning("Please fill in all fields to register.")
     
-    # Stops execution here so the rest of the app doesn't render until logged in
     st.stop()
     
 def get_quest_status(week_num):
@@ -198,6 +246,21 @@ def update_quest_status(week_num, is_completed):
         VALUES (?, ?) 
         ON CONFLICT(week_num) DO UPDATE SET is_completed = excluded.is_completed
     """, (week_num, int(is_completed)))
+    conn.commit()
+    
+def get_quest_status(week_num):
+    email = st.session_state.player_email
+    cursor.execute("SELECT is_completed FROM quest_progress WHERE player_email = ? AND week_num = ?", (email, week_num))
+    result = cursor.fetchone()
+    return bool(result[0]) if result else False
+
+def update_quest_status(week_num, is_completed):
+    email = st.session_state.player_email
+    cursor.execute("""
+        INSERT INTO quest_progress (player_email, week_num, is_completed) 
+        VALUES (?, ?, ?) 
+        ON CONFLICT(player_email, week_num) DO UPDATE SET is_completed = excluded.is_completed
+    """, (email, week_num, int(is_completed)))
     conn.commit()
 
 # SIDEBAR NAVIGATION
@@ -217,6 +280,7 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("SYSTEM STATUS: ONLINE")
+    st.caption(f"LOGGED IN AS: {st.session_state.player_name.upper()}")
 
 
 #  RAG & AI BACKEND ARCHITECTURE
@@ -344,11 +408,7 @@ if current_page == "1. Character Creation":
         st.session_state.score = score
         st.session_state.missing_skills = list(missing_skills)
         
-        cursor.execute(
-            "INSERT INTO users (target_role, readiness_score, missing_skills) VALUES (?, ?, ?)",
-            (target_role, score, json.dumps(list(missing_skills)))
-        )
-        conn.commit()
+        
         
         if missing_skills:
             with st.spinner("Compiling personalized curriculum via AI Engine..."):
@@ -357,15 +417,34 @@ if current_page == "1. Character Creation":
                 
                 if curriculum_json:
                     st.session_state.curriculum = curriculum_json
+                    
+                    cursor.execute(
+                        "INSERT INTO users (player_email, target_role, readiness_score, missing_skills,curriculum) VALUES (?, ?, ?, ?)",
+                        (st.session_state.player_email, target_role, score, json.dumps(list(missing_skills)), json.dumps(curriculum_json))
+                    )
+                    conn.commit()
+                    
                     st.success("SUCCESS! Curriculum loaded. Go to 'Quest Log (Roadmap)' to view your path.")
                 else:
                     st.error("AI Generation failed. Please check your API keys.")
         else:
+            cursor.execute(
+                "INSERT INTO users (player_email, target_role, readiness_score, missing_skills, curriculum) VALUES (?, ?, ?, ?)",
+                (st.session_state.player_email, target_role, score, "[]", "{}")
+            )
+            conn.commit()
             st.success("You have all baseline skills required for this role!")
 
 
 elif current_page == "2. Quest Log (Roadmap)":
     st.markdown("<h1>ACTIVE QUESTS</h1>", unsafe_allow_html=True)
+    
+    if not st.session_state.curriculum:
+        cursor.execute("SELECT curriculum, missing_skills FROM users ORDER BY id DESC LIMIT 1")
+        saved_data = cursor.fetchone()
+        if saved_data and saved_data[0]:
+            st.session_state.curriculum = json.loads(saved_data[0])
+            st.session_state.missing_skills = json.loads(saved_data[1])
     
     if st.session_state.curriculum:
         col_main, col_side = st.columns([2, 1])
