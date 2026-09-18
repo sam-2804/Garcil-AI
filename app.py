@@ -169,12 +169,65 @@ cursor.execute("""
 
 conn.commit()
 
-# Deterministic Data
 ROLE_TAXONOMY = {
-    "Data Scientist": {"Python", "SQL", "Pandas", "Machine Learning", "Statistics"},
-    "AI Engineer": {"Python", "PyTorch", "Transformers", "Docker", "FastAPI"},
-    "Cloud Architect": {"Python", "AWS", "Docker", "Kubernetes", "Terraform"}
-} 
+    # Software Engineering & Development
+    "Software Engineer": {"Python", "Java", "C++", "DSA", "OOP", "System Design", "Git", "Problem Solving"},
+    "C++ Developer": {"C++", "C", "OOP", "DSA", "Memory Management", "System Design"},
+    "Java Developer": {"Java", "OOP", "Spring Boot", "SQL", "REST API", "Git"},
+    "Python Developer": {"Python", "Django", "Flask", "SQL", "REST API", "Git", "Pandas"},
+    
+    # Web & Front-End Development[cite: 13]
+    "Front-End Developer": {"HTML", "CSS", "JavaScript", "TypeScript", "React", "Web Development", "UI/UX", "Git"},
+    "UI/UX Developer": {"Figma", "UI/UX", "HTML", "CSS", "JavaScript", "Web Development"},
+    
+    # Back-End & Full-Stack Development[cite: 13]
+    "Back-End Developer": {"Node.js", "Express.js", "Python", "Java", "PostgreSQL", "MongoDB", "REST API", "APIs", "System Design"},
+    "Full-Stack Developer": {"HTML", "CSS", "JavaScript", "React", "Node.js", "Express.js", "PostgreSQL", "MongoDB", "Web Development"},
+    
+    # Mobile & Device Development[cite: 13]
+    "Mobile App Developer": {"Swift", "Kotlin", "Flutter", "Dart", "Android Development", "UI/UX"},
+    "iOS Developer": {"Swift", "SwiftUI", "UI/UX", "Git", "REST API"},
+    "Android Developer": {"Kotlin", "Java", "Android Development", "UI/UX", "Git", "REST API"},
+    
+    # Game & XR Development[cite: 13]
+    "Game Developer": {"C++", "C#", "Computer Architecture", "Linear Algebra", "Problem Solving", "DSA"},
+    
+    # Artificial Intelligence & Machine Learning[cite: 13]
+    "Machine Learning Engineer": {"Python", "Machine Learning", "Deep Learning", "TensorFlow", "PyTorch", "Linear Algebra", "Probability & Statistics"},
+    "Artificial Intelligence Engineer": {"Python", "Artificial Intelligence", "Machine Learning", "Deep Learning", "Computer Vision", "NLP", "Problem Solving"},
+    "Large Language Model (LLM) Engineer": {"Python", "LLM", "RAG", "Generative AI", "Vector Databases", "Prompt Engineering", "AI Agents"},
+    "Prompt Engineer": {"Prompt Engineering", "Generative AI", "LLM", "AI", "NLP"},
+    
+    # Data Science & Engineering[cite: 13]
+    "Data Scientist": {"Python", "R", "Data Science", "Pandas", "NumPy", "Probability & Statistics", "Machine Learning", "Data Analytics"},
+    "Data Engineer": {"Python", "SQL", "PostgreSQL", "MongoDB", "Pandas", "Cloud Computing", "Linux"},
+    "Data Analyst": {"Excel", "Power BI", "Data Analytics", "SQL", "Python", "Pandas", "Probability & Statistics"},
+    
+    # Cloud Computing & DevOps[cite: 13]
+    "Cloud Architect": {"Cloud Computing", "Linux", "Docker", "Kubernetes", "System Design", "Computer Networks", "Cybersecurity"},
+    "DevOps Engineer": {"Linux", "Docker", "Kubernetes", "DevOps", "Git", "GitHub", "Cloud Computing", "Computer Networks"},
+    "Site Reliability Engineer (SRE)": {"Linux", "Python", "Go", "Docker", "Kubernetes", "Computer Networks", "System Design"},
+    
+    # Quality Assurance & Testing[cite: 13]
+    "QA Engineer": {"Software Testing", "Unit Testing", "Python", "Java", "Git", "Problem Solving"},
+    "Software Development Engineer in Test (SDET)": {"Software Testing", "Unit Testing", "Python", "Java", "OOP", "CI/CD", "Git"},
+    
+    # Cybersecurity & Privacy[cite: 13]
+    "Cybersecurity Engineer": {"Cybersecurity", "Computer Networks", "Operating Systems", "Linux", "Python", "System Design"},
+    "Information Security Analyst": {"Cybersecurity", "Computer Networks", "Linux", "Problem Solving", "Data Analytics"},
+    
+    # IT Network & Systems Administration[cite: 13]
+    "Systems Administrator (SysAdmin)": {"Linux", "Operating Systems", "Computer Networks", "Cybersecurity", "Bash"},
+    "Network Engineer": {"Computer Networks", "Operating Systems", "Linux", "Cybersecurity", "System Design"},
+    
+    # Database Administration[cite: 13]
+    "Database Administrator (DBA)": {"SQL", "DBMS", "PostgreSQL", "MongoDB", "Linux", "Operating Systems"},
+    
+    # Niche & Specialized Tech Roles[cite: 13]
+    "Blockchain Developer": {"Blockchain", "Solidity", "Web3", "Go", "Rust", "C++", "System Design"},
+    "Embedded Systems Engineer": {"C", "C++", "Computer Architecture", "Operating Systems", "Linux", "Problem Solving"},
+    "Competitive Programmer": {"DSA", "C++", "Java", "Python", "Competitive Programming", "Discrete Mathematics", "Problem Solving"}
+}
 
 # AUTHENTICATION GATE 
 
@@ -313,17 +366,28 @@ with st.sidebar:
         st.rerun()
 
 #  RAG & AI BACKEND ARCHITECTURE
-
 def retrieve_resources(missing_skills):
-    
     try:
-        with open("resources.json", "r") as file:
-            all_resources = json.load(file)
+        with open("GenAI_Free_Course_Resources.xlsx.json", "r") as file:
+            # Load the nested JSON structure
+            raw_json = json.load(file)
+            
         filtered_resources = []
         
-        for res in all_resources:
-            if res["skill"] in missing_skills:
-                filtered_resources.append(res)
+        # Loop through the 'data' array
+        for item in raw_json.get("data", []):
+            # Extract the actual course details from inside the 'record' wrapper
+            res = item.get("record", {})
+            
+            # Check if the skill matches (handling exact capitalization)
+            if res.get("Skill") in missing_skills:
+                # Append with lowercase keys so it matches what the AI expects
+                filtered_resources.append({
+                    "skill": res.get("Skill"),
+                    "title": res.get("Title"),
+                    "url": res.get("URL")
+                })
+                
         return filtered_resources
         
     except FileNotFoundError:
@@ -448,7 +512,7 @@ if current_page == "1. Character Creation":
                     st.session_state.curriculum = curriculum_json
                     
                     cursor.execute(
-                        "INSERT INTO users (player_email, target_role, readiness_score, missing_skills,curriculum) VALUES (?, ?, ?, ?)",
+                        "INSERT INTO users (player_email, target_role, readiness_score, missing_skills,curriculum) VALUES (?, ?, ?, ?, ?)",
                         (st.session_state.player_email, target_role, score, json.dumps(list(missing_skills)), json.dumps(curriculum_json))
                     )
                     conn.commit()
