@@ -1,0 +1,56 @@
+[
+  {
+    "skill": "Python",
+    "title": "Python for Beginners - Full Course",
+    "type": "Video",
+    "url": "https://www.youtube.com/watch?v=_uQrJ0TkZlc"
+  },
+  {
+    "skill": "SQL",
+    "title": "Intro to SQL: Querying and managing data",
+    "type": "Course",
+    "url": "https://www.khanacademy.org/computing/computer-programming/sql"
+  },
+  {
+    "skill": "Pandas",
+    "title": "Data Manipulation with pandas",
+    "type": "Documentation",
+    "url": "https://pandas.pydata.org/docs/getting_started/index.html"
+  },
+  {
+    "skill": "Machine Learning",
+    "title": "Machine Learning Specialization",
+    "type": "Course",
+    "url": "https://www.coursera.org/specializations/machine-learning"
+  },
+  {
+    "skill": "PyTorch",
+    "title": "Deep Learning with PyTorch: A 60 Minute Blitz",
+    "type": "Article",
+    "url": "https://pytorch.org/tutorials/beginner/deep_learning_60min_blitz.html"
+  },
+  {
+    "skill": "Docker",
+    "title": "Docker Crash Course for Absolute Beginners",
+    "type": "Video",
+    "url": "https://www.youtube.com/watch?v=pg19Z8LL06w"
+  },
+  {
+    "skill": "Transformers",
+    "title": "Hugging Face NLP Course",
+    "type": "Course",
+    "url": "https://huggingface.co/learn/nlp-course/chapter1/1"
+  },
+  {
+    "skill": "AWS",
+    "title": "AWS Cloud Practitioner Essentials",
+    "type": "Course",
+    "url": "https://aws.amazon.com/training/digital/aws-cloud-practitioner-essentials/"
+  },
+  {
+    "skill": "Kubernetes",
+    "title": "Kubernetes Basics Tutorial",
+    "type": "Article",
+    "url": "https://kubernetes.io/docs/tutorials/kubernetes-basics/"
+  }
+]
