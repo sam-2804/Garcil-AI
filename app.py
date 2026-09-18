@@ -292,7 +292,9 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("SYSTEM STATUS: ONLINE")
-    st.caption(f"LOGGED IN AS: {st.session_state.player_name.upper()}")
+    player_name = st.session_state.get("player_name")
+    if player_name:
+        st.caption(f"LOGGED IN AS: {player_name.upper()}")
     st.markdown("---")
     
     # LOGOUT ROUTINE
