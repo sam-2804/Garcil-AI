@@ -6,10 +6,8 @@ from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
 
-# ==========================================
-# 1. CONFIG & CSS INJECTION
-# ==========================================
 
+# CONFIG 
 load_dotenv()
 st.set_page_config(page_title="Garcil-AI Dashboard", layout="wide")
 
@@ -118,9 +116,8 @@ if st.session_state.retro_mode:
     st.markdown(retro_css, unsafe_allow_html=True)
 
   
-# ==========================================
-# 2. DATABASE CONFIGURATION
-# ==========================================
+
+# DATABASE INITIALIZATION
 
 conn = sqlite3.connect("garcil_state.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -139,15 +136,37 @@ ROLE_TAXONOMY = {
     "Data Scientist": {"Python", "SQL", "Pandas", "Machine Learning", "Statistics"},
     "AI Engineer": {"Python", "PyTorch", "Transformers", "Docker", "FastAPI"},
     "Cloud Architect": {"Python", "AWS", "Docker", "Kubernetes", "Terraform"}
-}
+} 
 
-# ==========================================
-# 3. SIDEBAR NAVIGATION
-# ==========================================
-# ==========================================
-# 3. SIDEBAR NAVIGATION
-# ==========================================
+# AUTHENTICATION GATE 
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>SYSTEM ACCESS RESTRICTED</h1>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.container(border=True):
+            st.markdown("### ENTER PLAYER CREDENTIALS")
+            email_input = st.text_input("Player ID (Email)", placeholder="john@gmail.com")
+            password_input = st.text_input("Password", type="password", placeholder="........")
+            
+            if st.button("AUTHORIZE LOGIN", type="primary", use_container_width=True):
+                if email_input == "samdavid9333@gmail.com" and password_input == "garcil123":
+                    st.session_state.logged_in = True
+                    st.rerun()
+                else:
+                    st.error("ACCESS DENIED: Invalid Credentials")
+    
+    # Stops execution here so the rest of the app doesn't render until logged in
+    st.stop()
+
+# SIDEBAR NAVIGATION
 with st.sidebar:
+    
     st.markdown("### PLAYER MENU")
     st.markdown("---")
     current_page = st.radio("SELECT LEVEL:", [
@@ -173,13 +192,12 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-# ==========================================
-# 4. PAGE LOGIC
-# ==========================================
+
+# PAGE LOGIC
+
 if current_page == "1. Character Creation":
     st.markdown("<h1>INITIATE PROFILE SETUP</h1>", unsafe_allow_html=True)
     
-    # UI Layout: Mission Objective Box
     with st.container(border=True):
         st.markdown("### MISSION OBJECTIVE")
         col1, col2 = st.columns(2)
@@ -188,7 +206,7 @@ if current_page == "1. Character Creation":
         with col2:
             target_role = st.selectbox("Target Class (Role)", list(ROLE_TAXONOMY.keys()))
             
-    # UI Layout: Skill Inventory Box
+    # Skill Inventory Box
     with st.container(border=True):
         st.markdown("### SKILL INVENTORY")
         known_skills = st.multiselect(
@@ -200,18 +218,19 @@ if current_page == "1. Character Creation":
         
     # Execution Logic
     if st.button("GENERATE ROADMAP", type="primary"):
-        # Pure Python Set Math to find the gap
+        
+        # Python Set to find the gap
         user_skills = set(known_skills)
         required_skills = ROLE_TAXONOMY[target_role]
         missing_skills = required_skills - user_skills
         
-        # Calculate Readiness Score
+        # Calculate the  Readiness Score
         total_req = len(required_skills)
         score = ((total_req - len(missing_skills)) / total_req) * 100
         
-        # UI Output
+        
         st.markdown("---")
-        st.markdown("### 📊 DETERMINISTIC GAP ANALYSIS")
+        st.markdown("###  DETERMINISTIC GAP ANALYSIS")
         st.metric("Career Readiness Score", f"{int(score)}%")
         
         if missing_skills:
@@ -219,19 +238,22 @@ if current_page == "1. Character Creation":
         else:
             st.success("You have all the baseline skills required!")
             
-        # Save state to SQLite
+        # Save the current state to SQLite
         cursor.execute(
             "INSERT INTO users (target_role, readiness_score, missing_skills) VALUES (?, ?, ?)",
             (target_role, score, json.dumps(list(missing_skills)))
         )
         conn.commit()
+        
+        
 elif current_page == "2. Quest Log (Roadmap)":
     st.markdown("<h1>ACTIVE QUESTS</h1>", unsafe_allow_html=True)
     
-    # 2-column layout to mimic a game menu
+    # Game menu
     col_main, col_side = st.columns([2, 1])
     
     with col_main:
+        
         # Hardcoded Module 1
         with st.container(border=True):
             st.markdown("### WEEK 1: PYTHON DATA STRUCTURES")
@@ -295,3 +317,5 @@ elif current_page == "3. Player Stats (Dashboard)":
                 index=['Python', 'SQL', 'Math', 'ML']
             )
             st.bar_chart(bar_data)
+            
+ 
