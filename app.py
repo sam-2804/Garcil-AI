@@ -219,20 +219,32 @@ if not st.session_state.logged_in:
                 
                 if st.button("REGISTER PROFILE", type="primary", use_container_width=True):
                     if reg_name and reg_email and reg_pass:
-                        try:    
-                            # Insert new user into database
-                            cursor.execute(
-                                "INSERT INTO user_accounts (email, name, password) VALUES (?, ?, ?)", 
-                                (reg_email, reg_name, reg_pass)
-                            )
-                            conn.commit()
-                            st.success("PROFILE CREATED! Switch to the LOGIN tab to enter.")
-                        except sqlite3.IntegrityError:
-                            # Triggers if the email (PRIMARY KEY) already exists
-                            st.error("ERROR: Player ID (Email) already exists in the system.")
+                        # 1. Check for existing email OR name in the database
+                        cursor.execute(
+                            "SELECT email, name FROM user_accounts WHERE email = ? OR name = ?", 
+                            (reg_email, reg_name)
+                        )
+                        existing_user = cursor.fetchone()
+                        
+                        # 2. Block registration if a match is found
+                        if existing_user:
+                            if existing_user[0] == reg_email:
+                                st.error("ERROR: Player ID (Email) is already registered in the system.")
+                            elif existing_user[1] == reg_name:
+                                st.error("ERROR: Player Name is already taken. Please choose another.")
+                        else:
+                            # 3. Safe to insert if no matches
+                            try:
+                                cursor.execute(
+                                    "INSERT INTO user_accounts (email, name, password) VALUES (?, ?, ?)", 
+                                    (reg_email, reg_name, reg_pass)
+                                )
+                                conn.commit()
+                                st.success("PROFILE CREATED! Switch to the LOGIN tab to enter.")
+                            except Exception as e:
+                                st.error(f"Database error: {str(e)}")
                     else:
                         st.warning("Please fill in all fields to register.")
-    
     st.stop()
     
 def get_quest_status(week_num):
@@ -281,7 +293,22 @@ with st.sidebar:
     st.markdown("---")
     st.caption("SYSTEM STATUS: ONLINE")
     st.caption(f"LOGGED IN AS: {st.session_state.player_name.upper()}")
-
+    st.markdown("---")
+    
+    # LOGOUT ROUTINE
+    if st.button("LOG OUT", use_container_width=True):
+        # 1. Revoke access
+        st.session_state.logged_in = False
+        st.session_state.player_name = None
+        st.session_state.player_email = None
+        
+        # 2. Wipe temporary RAM so the next player doesn't see the previous curriculum
+        st.session_state.curriculum = None
+        st.session_state.score = 0
+        st.session_state.missing_skills = []
+        
+        # 3. Instantly kick them back to the login gate
+        st.rerun()
 
 #  RAG & AI BACKEND ARCHITECTURE
 
