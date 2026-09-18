@@ -9,9 +9,14 @@ import numpy as np
 # ==========================================
 # 1. CONFIG & CSS INJECTION
 # ==========================================
+
 load_dotenv()
 st.set_page_config(page_title="Garcil-AI Dashboard", layout="wide")
-# Retro 8-bit CSS
+
+# Initialize theme state
+if "retro_mode" not in st.session_state:
+    st.session_state.retro_mode = True
+
 # Retro 8-bit CSS
 retro_css = """
 <style>
@@ -109,11 +114,14 @@ h1, h2, h3 {
 </style>
 """
 
-st.markdown(retro_css, unsafe_allow_html=True)
+if st.session_state.retro_mode:
+    st.markdown(retro_css, unsafe_allow_html=True)
 
+  
 # ==========================================
 # 2. DATABASE CONFIGURATION
 # ==========================================
+
 conn = sqlite3.connect("garcil_state.db", check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("""
@@ -136,6 +144,9 @@ ROLE_TAXONOMY = {
 # ==========================================
 # 3. SIDEBAR NAVIGATION
 # ==========================================
+# ==========================================
+# 3. SIDEBAR NAVIGATION
+# ==========================================
 with st.sidebar:
     st.markdown("### PLAYER MENU")
     st.markdown("---")
@@ -145,7 +156,13 @@ with st.sidebar:
         "3. Player Stats (Dashboard)"
     ])
     st.markdown("---")
+    
+    # toggle for theme switching
+    st.toggle("8-bit Arcade Mode", key="retro_mode")
+    
+    st.markdown("---")
     st.caption("SYSTEM STATUS: ONLINE")
+    
     
 st.markdown(
     """
