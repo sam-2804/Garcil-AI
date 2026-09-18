@@ -1,10 +1,26 @@
-import streamlit as st
-import sqlite3
-import json
-import os
+from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
+from google import genai
+import streamlit as st
 import pandas as pd
 import numpy as np
+import sqlite3
+import time
+import json
+import re
+import os
+
+
+
+# State variables for consistency across reloads or events
+
+if "curriculum" not in st.session_state:
+    st.session_state.curriculum = None
+if "score" not in st.session_state:
+    st.session_state.score = 0
+if "missing_skills" not in st.session_state:
+    st.session_state.missing_skills = []
+
 
 
 # CONFIG 
@@ -129,6 +145,13 @@ cursor.execute("""
         missing_skills TEXT
     )
 """)
+
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS quest_progress (
+        week_num INTEGER PRIMARY KEY,
+        is_completed INTEGER DEFAULT 0 
+    )
+""")
 conn.commit()
 
 # Deterministic Data
@@ -163,6 +186,19 @@ if not st.session_state.logged_in:
     
     # Stops execution here so the rest of the app doesn't render until logged in
     st.stop()
+    
+def get_quest_status(week_num):
+    cursor.execute("SELECT is_completed FROM quest_progress WHERE week_num = ?", (week_num,))
+    result = cursor.fetchone()
+    return bool(result[0]) if result else False
+
+def update_quest_status(week_num, is_completed):
+    cursor.execute("""
+        INSERT INTO quest_progress (week_num, is_completed) 
+        VALUES (?, ?) 
+        ON CONFLICT(week_num) DO UPDATE SET is_completed = excluded.is_completed
+    """, (week_num, int(is_completed)))
+    conn.commit()
 
 # SIDEBAR NAVIGATION
 with st.sidebar:
@@ -181,7 +217,89 @@ with st.sidebar:
     
     st.markdown("---")
     st.caption("SYSTEM STATUS: ONLINE")
+
+
+#  RAG & AI BACKEND ARCHITECTURE
+
+def retrieve_resources(missing_skills):
     
+    try:
+        with open("resources.json", "r") as file:
+            all_resources = json.load(file)
+        filtered_resources = []
+        
+        for res in all_resources:
+            if res["skill"] in missing_skills:
+                filtered_resources.append(res)
+        return filtered_resources
+        
+    except FileNotFoundError:
+        return []
+
+def clean_json_response(raw_text):
+    
+    cleaned = re.sub(r"```json\n|\n```|```", "", raw_text).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        return None
+
+def generate_curriculum(target_role, missing_skills, resources, weekly_hours):
+    
+    
+    prompt = f"""
+        You are an expert technical curriculum architect.
+        Target Role: {target_role}
+        Skills to Learn: {list(missing_skills)}
+        Time Commitment: {weekly_hours} hours per week
+        Verified Resources Available: {json.dumps(resources)}
+
+        Task:
+        Sequence the 'Skills to Learn' logically. Do not invent course links; ONLY use the URLs provided in the verified resources.
+        Format the response strictly as a JSON object with a 'modules' array containing 'week', 'focus_skill', 'resource_title', 'url', 'estimated_hours', and 'rationale'.
+    """
+        
+    # Primary API (Google GenAI)
+    try:
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        response = client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2
+            )
+        )
+        parsed_json = clean_json_response(response.text)
+        if parsed_json: 
+            return parsed_json
+    except Exception as e:
+        print(f"Gemini API warning: {str(e)}. Attempting fallback...")
+
+    # Fallback API(Hugging Face Zephyr)
+    try:
+        hf_client = InferenceClient(token=os.getenv("HF_TOKEN"))
+        response = hf_client.chat_completion(
+            model="meta-llama/Llama-3.1-8B-Instruct",
+            messages=[
+                {
+                    "role": "user", 
+                    "content": prompt + "\n\nCRITICAL: Output ONLY valid JSON. No markdown formatting, no intro text, no outro text."
+                }
+            ],
+            max_tokens=800,
+            temperature=0.2
+        )
+        
+        raw_output = response.choices[0].message.content
+        parsed_json = clean_json_response(raw_output)
+        if parsed_json: 
+            return parsed_json
+            
+    except Exception as fallback_error:
+        print(f"Fallback API failed: {str(fallback_error)}")
+        
+    return None
     
 st.markdown(
     """
@@ -206,7 +324,6 @@ if current_page == "1. Character Creation":
         with col2:
             target_role = st.selectbox("Target Class (Role)", list(ROLE_TAXONOMY.keys()))
             
-    # Skill Inventory Box
     with st.container(border=True):
         st.markdown("### SKILL INVENTORY")
         known_skills = st.multiselect(
@@ -216,106 +333,139 @@ if current_page == "1. Character Creation":
         )
         weekly_hours = st.slider("Grinding Hours (Per Week)", 2, 20, 10)
         
-    # Execution Logic
     if st.button("GENERATE ROADMAP", type="primary"):
-        
-        # Python Set to find the gap
         user_skills = set(known_skills)
         required_skills = ROLE_TAXONOMY[target_role]
         missing_skills = required_skills - user_skills
         
-        # Calculate the  Readiness Score
         total_req = len(required_skills)
         score = ((total_req - len(missing_skills)) / total_req) * 100
         
+        st.session_state.score = score
+        st.session_state.missing_skills = list(missing_skills)
         
-        st.markdown("---")
-        st.markdown("###  DETERMINISTIC GAP ANALYSIS")
-        st.metric("Career Readiness Score", f"{int(score)}%")
-        
-        if missing_skills:
-            st.warning(f"Missing Competencies Detected: {', '.join(missing_skills)}")
-        else:
-            st.success("You have all the baseline skills required!")
-            
-        # Save the current state to SQLite
         cursor.execute(
             "INSERT INTO users (target_role, readiness_score, missing_skills) VALUES (?, ?, ?)",
             (target_role, score, json.dumps(list(missing_skills)))
         )
         conn.commit()
         
-        
+        if missing_skills:
+            with st.spinner("Compiling personalized curriculum via AI Engine..."):
+                matched_resources = retrieve_resources(missing_skills)
+                curriculum_json = generate_curriculum(target_role, missing_skills, matched_resources, weekly_hours)
+                
+                if curriculum_json:
+                    st.session_state.curriculum = curriculum_json
+                    st.success("SUCCESS! Curriculum loaded. Go to 'Quest Log (Roadmap)' to view your path.")
+                else:
+                    st.error("AI Generation failed. Please check your API keys.")
+        else:
+            st.success("You have all baseline skills required for this role!")
+
+
 elif current_page == "2. Quest Log (Roadmap)":
     st.markdown("<h1>ACTIVE QUESTS</h1>", unsafe_allow_html=True)
     
-    # Game menu
-    col_main, col_side = st.columns([2, 1])
-    
-    with col_main:
+    if st.session_state.curriculum:
+        col_main, col_side = st.columns([2, 1])
         
-        # Hardcoded Module 1
-        with st.container(border=True):
-            st.markdown("### WEEK 1: PYTHON DATA STRUCTURES")
-            st.write("**OBJECTIVE:** Master lists, dictionaries, and sets before touching Pandas.")
-            st.write("**TIME REQ:** 5 Hours")
-            st.markdown("[START MODULE: Python Crash Course](#)")
-            st.checkbox("Mark as Complete", key="chk_w1")
-            
-        # Hardcoded Module 2
-        with st.container(border=True):
-            st.markdown("### WEEK 2: SQL WINDOW FUNCTIONS")
-            st.write("**OBJECTIVE:** Learn advanced querying for data manipulation and ranking.")
-            st.write("**TIME REQ:** 4 Hours")
-            st.markdown("[START MODULE: Advanced SQL Techniques](#)")
-            st.checkbox("Mark as Complete", key="chk_w2")
-            
-    with col_side:
-        # Hardcoded tracking side-panel
-        with st.container(border=True):
-            st.markdown("### MISSING SKILLS")
-            st.markdown("- Pandas")
-            st.markdown("- SQL")
-            st.markdown("- Machine Learning")
-            st.markdown("- Statistics")
+        with col_main:
+            for module in st.session_state.curriculum.get("modules", []):
+                week_num = module.get("week")
+                
+                # Load saved state from database
+                saved_status = get_quest_status(week_num)
+                
+                with st.container(border=True):
+                    st.markdown(f"### WEEK {week_num}: {module.get('focus_skill')}")
+                    st.write(f"**OBJECTIVE:** {module.get('rationale')}")
+                    st.write(f"**TIME REQ:** {module.get('estimated_hours')} Hours")
+                    st.markdown(f"[START MODULE: {module.get('resource_title')}]({module.get('url')})")
+                    
+                    # Interactive checkbox connected to database callback
+                    is_checked = st.checkbox(
+                        "Mark as Complete", 
+                        value=saved_status, 
+                        key=f"chk_{week_num}"
+                    )
+                    
+                    # Save state if changed
+                    if is_checked != saved_status:
+                        update_quest_status(week_num, is_checked)
+                        st.rerun()
+                    
+        with col_side:
+            with st.container(border=True):
+                st.markdown("### MISSING SKILLS")
+                for skill in st.session_state.missing_skills:
+                    st.markdown(f"- {skill}")
+    else:
+        st.warning("No active quests found. Complete 'Character Creation' first to generate your AI roadmap.")
 
 elif current_page == "3. Player Stats (Dashboard)":
     st.markdown("<h1>ANALYTICS DASHBOARD</h1>", unsafe_allow_html=True)
     
-    # Top Row: KPIs
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        with st.container(border=True):
-            st.metric("READINESS SCORE", "20%")
-    with m2:
-        with st.container(border=True):
-            st.metric("WEEKS TO COMPLETION", "8")
-    with m3:
-        with st.container(border=True):
-            st.metric("XP EARNED", "150", "+50 this week")
-            
-    st.markdown("---")
+    # 1. Fetch the latest user profile data from SQLite
+    cursor.execute("SELECT target_role, readiness_score, missing_skills FROM users ORDER BY id DESC LIMIT 1")
+    user_data = cursor.fetchone()
     
-    # Bottom Row: Mock Visualizations
-    c1, c2 = st.columns(2)
-    with c1:
-        with st.container(border=True):
-            st.markdown("### PROGRESS TRAJECTORY")
-            # Hardcoded dummy line chart
-            chart_data = pd.DataFrame(
-                np.random.randn(20, 2).cumsum(axis=0) + 10, 
-                columns=['Projected XP', 'Actual XP']
-            )
-            st.line_chart(chart_data)
-            
-    with c2:
-        with st.container(border=True):
-            st.markdown("### SKILL DISTRIBUTION")
-            # Hardcoded dummy bar chart
-            bar_data = pd.DataFrame(
-                {'Level': [80, 45, 60, 20]}, 
-                index=['Python', 'SQL', 'Math', 'ML']
-            )
-            st.bar_chart(bar_data)
-            
- 
+    # 2. Fetch the total number of completed quests
+    cursor.execute("SELECT COUNT(*) FROM quest_progress WHERE is_completed = 1")
+    completed_quests = cursor.fetchone()[0]
+    
+    if user_data:
+        target_role = user_data[0]
+        readiness_score = int(user_data[1])
+        missing_skills = json.loads(user_data[2])
+        
+        # Calculate dynamic gamified metrics
+        xp_earned = completed_quests * 50  # 50 XP per completed week
+        
+        # Determine total weeks from active curriculum or default to length of missing skills
+        total_weeks = len(st.session_state.curriculum.get("modules", [])) if st.session_state.curriculum else len(missing_skills)
+        weeks_remaining = max(0, total_weeks - completed_quests)
+        
+        # Top Row: Dynamic KPIs
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            with st.container(border=True):
+                st.metric("READINESS SCORE", f"{readiness_score}%")
+        with m2:
+            with st.container(border=True):
+                st.metric("WEEKS TO COMPLETION", str(weeks_remaining))
+        with m3:
+            with st.container(border=True):
+                st.metric("XP EARNED", str(xp_earned), f"{completed_quests} Quests Done")
+                
+        st.markdown("---")
+        
+        # Bottom Row: Real Data Visualizations
+        c1, c2 = st.columns(2)
+        
+        with c1:
+            with st.container(border=True):
+                st.markdown("### PROGRESS TRAJECTORY")
+                # Generate a real cumulative line chart based on quests finished
+                if completed_quests > 0:
+                    # Creates a list of XP growth: e.g., [0, 50, 100]
+                    progress_data = [0] + [50 * i for i in range(1, completed_quests + 1)]
+                    chart_data = pd.DataFrame(progress_data, columns=['Actual XP'])
+                else:
+                    chart_data = pd.DataFrame([0], columns=['Actual XP'])
+                st.line_chart(chart_data)
+                
+        with c2:
+            with st.container(border=True):
+                st.markdown("### SKILL INVENTORY")
+                # Build a dynamic bar chart comparing known (100%) vs missing (0%) skills
+                req_skills = ROLE_TAXONOMY.get(target_role, set())
+                skill_status = {}
+                for skill in req_skills:
+                    skill_status[skill] = 0 if skill in missing_skills else 100
+                    
+                bar_data = pd.DataFrame.from_dict(skill_status, orient='index', columns=['Mastery %'])
+                st.bar_chart(bar_data)
+                
+    else:
+        st.warning("No player data found. Please complete 'Character Creation' to initialize your stats.")
